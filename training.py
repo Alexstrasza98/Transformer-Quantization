@@ -34,6 +34,7 @@ class Learner():
     def train(self):
         cudnn.benchmark = True
         epochs = self.config['epochs']
+        self.total_step = 120000//self.config['batch_size']
         
         for epoch in tqdm(range(epochs)):
             print('current lr {:.5e}'.format(self.optimizer.param_groups[0]['lr']))
@@ -45,7 +46,6 @@ class Learner():
             test_acc = self.validate(epoch)
             
             self.test_acc_all.append(test_acc)
-            self.scheduler.step()
             
             if test_acc > self.best_acc:
                 self.save_model()
@@ -87,7 +87,7 @@ class Learner():
                 print('Epoch: [{0}][{1}/{2}]\t'
                       'Loss {loss.avg:.4f}\t'
                       'Prec@1 {top1.avg:.3f}'.format(
-                          epoch, i, i, loss=losses, top1=top1_acc))
+                          epoch, i, self.total_step, loss=losses, top1=top1_acc))
                 
     def validate(self, epoch, verbose=True):
         """
@@ -124,5 +124,5 @@ class Learner():
     def logging(self):
         # not implemented yet
         pass
-    
+
     
