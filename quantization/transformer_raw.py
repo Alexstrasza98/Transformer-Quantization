@@ -9,16 +9,16 @@ class PositionalEncoding(nn.Module):
     def __init__(self, d_model, dropout, max_len):
         super(PositionalEncoding, self).__init__()
         self.dropout = nn.Dropout(p=dropout)
-        pe = torch.zeros(max_len, d_model)
-        position = torch.arange(0, max_len).unsqueeze(1)
-        scale = torch.exp(torch.arange(0, d_model, 2) * -(math.log(10000.0) / d_model))
+        pe = torch.zeros((max_len, d_model), device="cuda")
+        position = torch.arange(0, max_len).unsqueeze(1).cuda()
+        scale = torch.exp(torch.arange(0, d_model, 2) * -(math.log(10000.0) / d_model)).cuda()
         pe[:, 0::2] = torch.sin(position * scale)
         pe[:, 1::2] = torch.cos(position * scale)
         pe = pe.unsqueeze(0)
         self.register_buffer("pe", pe)
 
     def forward(self, x):
-        x = x + Variable(self.pe[:, :x.size(1)], requires_grad=True)
+        x = x + Variable(self.pe[:, :x.size(1)], requires_grad=False)
         return self.dropout(x)
 
 
@@ -31,7 +31,7 @@ class Embeddings(nn.Module):
         self.maxlen = maxlen
 
     def forward(self, x):
-        positions = self.pos_embedding(torch.arange(start=0, end=self.maxlen))
+        positions = self.pos_embedding(torch.arange(start=0, end=self.maxlen, device="cuda"))[:x.size(1), :]
         tokens = self.token_embedding(x)
         return (positions + tokens) * math.sqrt(self.d_model)
 
@@ -47,13 +47,17 @@ class PositionalWiseFFN(nn.Module):
         return F.relu(self.w_2(F.relu(self.w_1(x))))
 
 
-def ScaledDotProduct(query, key, values, dropout=None):
+def ScaledDotProduct(query, key, values, dropout=None, mask=None):
     d_k = query.size(-1)
-    scores = query @ key.transpose(-2, -1) / math.sqrt(d_k)
+    scores = torch.matmul(query, key.transpose(-2, -1)) / math.sqrt(d_k)
+
+    if mask is not None:
+        mask = mask.squeeze(1)
+        scores = scores.masked_fill_(mask == 0, -1e-9)
     p_atten = F.softmax(scores, dim=-1)
     if dropout:
         p_atten = dropout(p_atten)
-    return p_atten @ values, p_atten
+    return torch.matmul(p_atten, values), p_atten
 
 
 class MultiheadAttention(nn.Module):
@@ -64,25 +68,30 @@ class MultiheadAttention(nn.Module):
         self.h = h
         self.heads = list()
         self.attn = None
-        for _ in range(h+1):
-            self.heads.append(nn.Linear(d_model, d_model))
+        for _ in range(h):
+            self.heads.append(nn.Linear(d_model, d_model).cuda())
+        self.output = nn.Linear(d_model, d_model).cuda()
         self.dropout = nn.Dropout(p=dropout)
 
-    def forward(self, query, key, value):
+    def forward(self, query, key, value, mask=None):
         batch_size = query.size(0)
+        if mask is not None:
+            mask = mask.unsqueeze(1)
         query, key, value = [l(x).view(batch_size, -1, self.h, self.d_k).transpose(1, 2)
                              for l, x in zip(self.heads, (query, key, value))]
-        x, self.attn = ScaledDotProduct(query, key, value, self.dropout)
+        x, self.attn = ScaledDotProduct(query, key, value, self.dropout, mask)
         x = x.transpose(1, 2).contiguous().view(batch_size, -1, self.h * self.d_k)
-        return self.heads[-1](x)
+        x = self.output(x)
+        return x
 
 
 class LayerNorm(nn.Module):
     "Construct a layernorm module"
+
     def __init__(self, features, eps=1e-6):
         super(LayerNorm, self).__init__()
-        self.a_2 = nn.Parameter(torch.ones(features))
-        self.b_2 = nn.Parameter(torch.zeros(features))
+        self.a_2 = nn.Parameter(torch.ones(features, device="cuda"))
+        self.b_2 = nn.Parameter(torch.zeros(features, device="cuda"))
         self.eps = eps
 
     def forward(self, x):
@@ -98,22 +107,24 @@ class sublayerConnectionAttention(nn.Module):
         self.layernorm = LayerNorm(d_model)
         self.dropout = nn.Dropout(p=dropout_connection)
 
-    def forward(self, query, key, value):
-        original = torch.cat([query, key, value], dim=-1)
-        x = self.multiheads(query, key, value)
-        x = self.dropout(self.layernorm(x))
+    def forward(self, x, mask=None):
+        original = x
+        x = self.layernorm(x)
+        x = self.multiheads(x, x, x, mask)
+        x = self.dropout(x)
         return x + original
 
 
 class sublayerConnectionFFN(nn.Module):
     def __init__(self, d_model, d_ff, dropout_ffn=0.1, dropout_connection=0.1):
         super(sublayerConnectionFFN, self).__init__()
-        self.ffn = PositionalWiseFFN(d_model, d_ff, dropout_ffn)
+        self.ffn = PositionalWiseFFN(d_model, d_ff, dropout_ffn).cuda()
         self.layernorm = LayerNorm(d_model)
         self.dropout = nn.Dropout(p=dropout_connection)
 
     def forward(self, x):
         original = x
+        x = self.layernorm(x)
         x = self.dropout(self.ffn(x))
         return x + original
 
@@ -135,7 +146,7 @@ class Model(nn.Module):
                  h=2,
                  d_model=512,
                  d_ff=128,
-                 maxlen=200,
+                 maxlen=512,
                  dropout_encodings=0.1,
                  dropout_connection_attention=0.1,
                  dropout_connection_ffn=0.1,
@@ -144,6 +155,7 @@ class Model(nn.Module):
         super(Model, self).__init__()
         self.input_embeddings = Embeddings(d_model, vocab, maxlen)
         self.input_encodings = PositionalEncoding(d_model, dropout_encodings, maxlen)
+        self.layernorm = LayerNorm(d_model)
         self.sublayer_attention = list()
         self.sublayer_ffn = list()
         for _ in range(n_layers):
@@ -154,13 +166,15 @@ class Model(nn.Module):
         self.classifier = Classifier(d_model, n_class)
         self.n_layers = n_layers
 
-    def forward(self, x):
+    def forward(self, x, mask=None):
         embeddings = self.input_embeddings(x)
-        encodings = self.input_encodings(x)
+        encodings = self.input_encodings(embeddings)
         x = embeddings + encodings
         for i in range(self.n_layers):
-            x = self.sublayer_attention[i](x, x, x)
+            x = self.sublayer_attention[i](x, mask)
             x = self.sublayer_ffn[i](x)
-        outputs = self.classifier(x)
+            x = self.layernorm(x)
+        cls_repre = x[:, 0, :]
+        outputs = self.classifier(cls_repre)
         return outputs
 
