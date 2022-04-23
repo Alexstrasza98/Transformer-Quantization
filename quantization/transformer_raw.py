@@ -44,7 +44,7 @@ class PositionalWiseFFN(nn.Module):
         self.dropout = nn.Dropout(dropout)
 
     def forward(self, x):
-        return F.relu(self.w_2(F.relu(self.w_1(x))))
+        return self.w_2(self.dropout(F.relu(self.w_1(x))))
 
 
 def ScaledDotProduct(query, key, values, dropout=None, mask=None):
