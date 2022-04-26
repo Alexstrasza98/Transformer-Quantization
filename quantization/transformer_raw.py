@@ -155,7 +155,7 @@ class Model(nn.Module):
         super(Model, self).__init__()
         self.input_embeddings = Embeddings(d_model, vocab, maxlen)
         self.input_encodings = PositionalEncoding(d_model, dropout_encodings, maxlen)
-        self.layernorm = LayerNorm(d_model)
+        # self.layernorm = LayerNorm(d_model)
         self.sublayer_attention = list()
         self.sublayer_ffn = list()
         for _ in range(n_layers):
@@ -166,6 +166,8 @@ class Model(nn.Module):
         self.classifier = Classifier(d_model, n_class)
         self.n_layers = n_layers
 
+        self.init_params()
+
     def forward(self, x, mask=None):
         embeddings = self.input_embeddings(x)
         encodings = self.input_encodings(embeddings)
@@ -173,8 +175,14 @@ class Model(nn.Module):
         for i in range(self.n_layers):
             x = self.sublayer_attention[i](x, mask)
             x = self.sublayer_ffn[i](x)
-            x = self.layernorm(x)
+            # x = self.layernorm(x)
         cls_repre = x[:, 0, :]
         outputs = self.classifier(cls_repre)
         return outputs
 
+    def init_params(self, default_initialization=False):
+        # Not mentioned in the paper, but other implementations used xavier.
+        if not default_initialization:
+            for name, p in self.named_parameters():
+                if p.dim() > 1:
+                    nn.init.xavier_uniform_(p)
