@@ -320,8 +320,6 @@ class PositionalEncoding(nn.Module):
 #
 # Helper model functions
 #
-
-
 def get_clones(module, num_of_deep_copies):
     # Create deep copies so that we can tweak each module's weights independently
     return nn.ModuleList([copy.deepcopy(module) for _ in range(num_of_deep_copies)])
