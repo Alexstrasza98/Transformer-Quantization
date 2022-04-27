@@ -47,11 +47,25 @@ keys = {"scale_product_head_0",
         "classifier"}
 
 
-def quantization_weights(X, xmin, xmax, k=8):
+def quantization_weights(X, k=8):
+    xmax = torch.max(X).item()
+    xmin = torch.min(X).item()
     s = (xmax - xmin) / (2 ** k - 1)
     q = torch.div(torch.clamp(X, min=xmin, max=xmax), s, rounding_mode="floor") * s + xmin
     return q
 
+
+class Quantization_Weights(torch.autograd.Function):
+    @staticmethod
+    def forward(ctx, inputs, k=8):
+        return quantization_weights(inputs, k)
+
+    @staticmethod
+    def backward(ctx, grad_outputs):
+        return grad_outputs, None, None
+
+
+_apply_quantization_weights = Quantization_Weights.apply
 
 """
 Original representation
@@ -71,22 +85,25 @@ def quantization_activations(X, xmin, xmax, k=8):
             xmin = 0.9 * xmin + 0.1 * torch.min(X).item()
             xmax = 0.9 * xmax + 0.1 * torch.max(X).item()
     s = (xmax - xmin) / (2 ** k - 1)
-    q = torch.div(torch.clamp(X, min=xmin, max=xmax), s, rounding_mode="floor") * s + xmin
+    q = torch.div(torch.clamp(X, min=xmin, max=xmax), s, rounding_mode="trunc") * s + xmin
     return q, xmin, xmax
 
 
-class Quantization_Activations(torch.autograd.Function):
-
-    @staticmethod
-    def forward(ctx, X, xmin, xmax, k=8):
-        return quantization_activations(X, xmin, xmax, k)
-
-    @staticmethod
-    def backward(ctx, grad_outputs):
-        return grad_outputs, None, None
-
-
-_quantization_activations = Quantization_Activations.apply
+"""
+Does activations have backpropagation?
+"""
+# class Quantization_Activations(torch.autograd.Function):
+#
+#     @staticmethod
+#     def forward(ctx, X, xmin, xmax, k=8):
+#         return quantization_activations(X, xmin, xmax, k)
+#
+#     @staticmethod
+#     def backward(ctx, grad_outputs):
+#         return grad_outputs, None, None
+#
+#
+# _quantization_activations = Quantization_Activations.apply
 
 
 def apply_quantization_activations(key_name, X):
@@ -104,7 +121,7 @@ def apply_quantization_activations(key_name, X):
             xmax = torch.max(X).item()
 
         buckets[key_name] = [xmin, xmax]
-    X, xmin_updated, xmax_updated = _quantization_activations(X, xmin, xmax)
+    X, xmin_updated, xmax_updated = quantization_activations(X, xmin, xmax)
     buckets[key_name] = [xmin_updated, xmax_updated]
     return X
 
