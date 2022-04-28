@@ -7,11 +7,11 @@ import math
 from collections import defaultdict
 
 
-class LayerNorm(nn.Module):
+class LayerNormQuant(nn.Module):
     "Construct a layernorm module"
 
     def __init__(self, features, eps=1e-6):
-        super(LayerNorm, self).__init__()
+        super(LayerNormQuant, self).__init__()
         self.a_2 = nn.Parameter(torch.ones(features, device="cuda"))
         self.b_2 = nn.Parameter(torch.zeros(features, device="cuda"))
         self.eps = eps
@@ -19,7 +19,9 @@ class LayerNorm(nn.Module):
     def forward(self, x):
         mean = x.mean(-1, keepdim=True)
         std = x.std(-1, keepdim=True)
-        return self.a_2 * (x - mean) / (std + self.eps) + self.b_2
+        numer_quant = apply_quantization_activations("", (x - mean), False)
+        denominator_quant = apply_quantization_activations("", (std + self.eps), False)
+        return self.a_2 * numer_quant / denominator_quant + self.b_2
 
 # assuming h=8 and num_heads=2 -> we have 77 activations pending for quantization!
 buckets = defaultdict(lambda: [None, None])
@@ -72,8 +74,11 @@ Original representation
 """
 
 
-def quantization_activations(X, xmin, xmax, k=8):
-    if X.requires_grad:
+def quantization_activations(X, xmin, xmax, k=8, EMA=True):
+    if xmin is None and xmax is None:
+        xmin = torch.min(X).item()
+        xmax = torch.max(X).item()
+    if X.requires_grad and EMA:
         if len(X.size()) > 3:
             num_heads = X.size(1)
             x_copy = X.permute(0, 2, 3, 1).contiguous().view(-1, num_heads)
@@ -92,36 +97,41 @@ def quantization_activations(X, xmin, xmax, k=8):
 """
 Does activations have backpropagation?
 """
-# class Quantization_Activations(torch.autograd.Function):
-#
-#     @staticmethod
-#     def forward(ctx, X, xmin, xmax, k=8):
-#         return quantization_activations(X, xmin, xmax, k)
-#
-#     @staticmethod
-#     def backward(ctx, grad_outputs):
-#         return grad_outputs, None, None
-#
-#
-# _quantization_activations = Quantization_Activations.apply
+class Quantization_Activations(torch.autograd.Function):
+
+    @staticmethod
+    def forward(ctx, X, xmin, xmax, k=8, EMA=True):
+        return quantization_activations(X, xmin, xmax, k, EMA)
+
+    @staticmethod
+    def backward(ctx, grad_outputs):
+        return grad_outputs, None, None
 
 
-def apply_quantization_activations(key_name, X):
-    assert key_name in keys
-    xmin, xmax = buckets[key_name]
-    if xmin is None and xmax is None:
-        if len(X.size()) > 3:
-            # It may happen at the multi-head attention
-            num_heads = X.size(1)
-            x_copy = X.permute(0, 2, 3, 1).contiguous().view(-1, num_heads)
-            xmin = torch.min(x_copy, dim=0)[0].detach().unsqueeze(-1).unsqueeze(-1)
-            xmax = torch.max(x_copy, dim=0)[0].detach().unsqueeze(-1).unsqueeze(-1)
-        else:
-            xmin = torch.min(X).item()
-            xmax = torch.max(X).item()
+_quantization_activations = Quantization_Activations.apply
 
-        buckets[key_name] = [xmin, xmax]
-    X, xmin_updated, xmax_updated = quantization_activations(X, xmin, xmax)
+
+def apply_quantization_activations(key_name, X, EMA=True):
+    if key_name in keys:
+        xmin, xmax = buckets[key_name]
+    else:
+        xmin, xmax = None, None
+    if EMA and X.requires_grad:
+        assert key_name in keys
+        xmin, xmax = buckets[key_name]
+        if xmin is None and xmax is None:
+            if len(X.size()) > 3:
+                # It may happen at the multi-head attention
+                num_heads = X.size(1)
+                x_copy = X.permute(0, 2, 3, 1).contiguous().view(-1, num_heads)
+                xmin = torch.min(x_copy, dim=0)[0].detach().unsqueeze(-1).unsqueeze(-1)
+                xmax = torch.max(x_copy, dim=0)[0].detach().unsqueeze(-1).unsqueeze(-1)
+            else:
+                xmin = torch.min(X).item()
+                xmax = torch.max(X).item()
+
+            buckets[key_name] = [xmin, xmax]
+    X, xmin_updated, xmax_updated = _quantization_activations(X, xmin, xmax, EMA)
     buckets[key_name] = [xmin_updated, xmax_updated]
     return X
 
@@ -249,7 +259,7 @@ class sublayerConnectionAttention(nn.Module):
     def __init__(self, h, d_model, dropout_head=0.1, dropout_connection=0.1, head=0):
         super(sublayerConnectionAttention, self).__init__()
         self.multiheads = MultiheadAttentionQuant(h, d_model, dropout_head, head)
-        self.layernorm = LayerNorm(d_model)
+        self.layernorm = LayerNormQuant(d_model)
         self.dropout = nn.Dropout(p=dropout_connection)
 
     def forward(self, x, mask=None):
@@ -264,7 +274,7 @@ class sublayerConnectionFFN(nn.Module):
     def __init__(self, d_model, d_ff, dropout_ffn=0.1, dropout_connection=0.1, head=0):
         super(sublayerConnectionFFN, self).__init__()
         self.ffn = PositionalWiseFFNQuant(d_model, d_ff, dropout_ffn, head).cuda()
-        self.layernorm = LayerNorm(d_model)
+        self.layernorm = LayerNormQuant(d_model)
         self.dropout = nn.Dropout(p=dropout_connection)
 
     def forward(self, x):

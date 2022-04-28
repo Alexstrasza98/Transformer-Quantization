@@ -156,8 +156,8 @@ class Model(nn.Module):
         self.input_embeddings = Embeddings(d_model, vocab, maxlen)
         self.input_encodings = PositionalEncoding(d_model, dropout_encodings, maxlen)
         # self.layernorm = LayerNorm(d_model)
-        self.sublayer_attention = list()
-        self.sublayer_ffn = list()
+        self.sublayer_attention = nn.ModuleList()
+        self.sublayer_ffn = nn.ModuleList()
         for _ in range(n_layers):
             self.sublayer_attention.append(sublayerConnectionAttention(
                 h, d_model, dropout_attention, dropout_connection_attention))
