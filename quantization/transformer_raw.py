@@ -26,6 +26,7 @@ class Transformer(nn.Module):
                  h=8,
                  d_model=512,
                  d_ff=1024,
+                 d_hidden=1024,
                  maxlen=512,
                  dropout_encodings=0.1,
                  dropout_connection_attention=0.1,
@@ -43,7 +44,7 @@ class Transformer(nn.Module):
                 h, d_model, dropout_attention, dropout_connection_attention))
             self.sublayer_ffn.append(sublayerConnectionFFN(
                 d_model, d_ff, dropout_ffn, dropout_connection_ffn))
-        self.classifier = Classifier(d_model, n_class)
+        self.classifier = Classifier(d_model, d_hidden, n_class)
         self.n_layers = n_layers
 
         self.init_params()
@@ -224,9 +225,10 @@ class sublayerConnectionFFN(nn.Module):
 
 class Classifier(nn.Module):
     '''Final classifier with one linear layer'''
-    def __init__(self, d_model, n_class):
+    def __init__(self, d_model, d_hidden, n_class):
         super(Classifier, self).__init__()
+        self.hidden = nn.Linear(d_model, d_hidden)
         self.classifier = nn.Linear(d_model, n_class)
 
     def forward(self, x):
-        return self.classifier(x)
+        return self.classifier(F.relu(self.hidden(x)))
