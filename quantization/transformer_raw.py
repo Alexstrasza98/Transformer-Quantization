@@ -25,7 +25,7 @@ class Transformer(nn.Module):
                  n_layers=6,
                  h=8,
                  d_model=512,
-                 d_ff=128,
+                 d_ff=1024,
                  maxlen=512,
                  dropout_encodings=0.1,
                  dropout_connection_attention=0.1,

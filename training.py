@@ -12,6 +12,7 @@ class Learner():
         train_conig: a dict of {'model': model to use,
                                 'loss_fn': loss function to use,
                                 'optim': optimizer to use,
+                                'scheduler': lr scheduler to use,
                                 'datasets': dataset to use,
                                 'epochs': how many epochs to train on}
         '''
@@ -23,6 +24,7 @@ class Learner():
         self.model.to(device)
         self.criterion = train_config['loss_fn']
         self.optimizer = train_config['optim']
+        self.scheduler = train_config['scheduler']
         
         self.train_loader, self.test_loader = train_config['datasets']
         
@@ -50,6 +52,9 @@ class Learner():
             if test_acc > self.best_acc:
                 self.save_model()
                 self.best_acc = test_acc
+             
+            if self.scheduler is not None:
+                self.scheduler.step()
             
         return self.test_acc_all
     
@@ -113,6 +118,9 @@ class Learner():
             print('Epoch[{}] *Validation*: Prec@1 {top1.avg:.3f}'.format(epoch, top1=top1_acc))
         
         return top1_acc.avg
+    
+    def evaluate(self, model_path):
+        pass
         
     def save_model(self):
         torch.save(self.model.state_dict(), self.model_path)
