@@ -14,13 +14,13 @@ class Learner():
                                 'optim': optimizer to use,
                                 'scheduler': lr scheduler to use,
                                 'datasets': dataset to use,
-                                'epochs': how many epochs to train on}
+                                'epochs': how many epochs to train on,
+                                'exp_name': experiment name, to save model}
         '''
         # training settings
         self.config = train_config
         
         self.model = train_config['model']
-        self.model_name = self.model.model_name
         self.model.to(device)
         self.criterion = train_config['loss_fn']
         self.optimizer = train_config['optim']
@@ -31,7 +31,8 @@ class Learner():
         # initialization of record variables
         self.test_acc_all = []
         self.best_acc = 0.0
-        self.model_path = f'./res/{self.model_name}_best.pth'
+        self.exp_name = train_config['exp_name']
+        self.model_path = f'./res/{self.exp_name}_best.pth'
         
     def train(self):
         cudnn.benchmark = True

@@ -16,6 +16,7 @@ class Transformer(nn.Module):
     h           - number of heads in MHA module
     d_model     - dimensions of features per token throughout whole model
     d_ff        - dimensions of features in middle layer of FFN module
+    d_hidden    - dimensions of features in classifier hidden layer
     maxlen      - max possible token length for input sentence
     dropout_... - dropout rate for respective layer
     '''
@@ -159,9 +160,9 @@ class MultiheadAttention(nn.Module):
         assert d_model % h == 0
         self.d_k = d_model // h
         self.h = h
-        self.heads = list()
+        self.heads = nn.ModuleList()
         self.attn = None
-        for _ in range(h):
+        for _ in range(3):
             self.heads.append(nn.Linear(d_model, d_model).to(device))
         self.output = nn.Linear(d_model, d_model).to(device)
         self.dropout = nn.Dropout(p=dropout)
@@ -228,7 +229,7 @@ class Classifier(nn.Module):
     def __init__(self, d_model, d_hidden, n_class):
         super(Classifier, self).__init__()
         self.hidden = nn.Linear(d_model, d_hidden)
-        self.classifier = nn.Linear(d_model, n_class)
+        self.classifier = nn.Linear(d_hidden, n_class)
 
     def forward(self, x):
         return self.classifier(F.relu(self.hidden(x)))
