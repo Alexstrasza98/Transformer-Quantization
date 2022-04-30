@@ -3,6 +3,7 @@ import torch
 import torch.nn as nn
 from torch.autograd import Function
 
+import pdb
 
 class BinaryLinearFunction(Function):
     """
@@ -80,7 +81,43 @@ class BinarizedLinear(nn.Module):
         return self.__class__.__name__ + " (" + str(self.in_features) + " -> " + str(self.out_features) + ")"
 
 
-def binarize(model, binarize_all_linear=False):
+def binarize(model, pattern):
+    """
+    Recursively replace linear layers with binary layers
+    ---------
+    Arguments:
+    model -   Model to be binarized
+    pattern - Binarization pattern
+    ---------
+    No return, the original model is binarized
+    """
+    
+    patterns = ['MHA_ONLY', 'FFN_ONLY', 'CLS_ONLY', 'ALL']
+    
+    if pattern not in patterns:
+        raise Exception(f'Unimplemented pattern, pattern should be in {patterns}, got {pattern}!')
+    
+    if pattern == 'MHA_ONLY':
+        model = model.__dict__["_modules"]['sublayer_attention']
+    elif pattern == 'FFN_ONLY':
+        model = model.__dict__["_modules"]['sublayer_ffn']
+    elif pattern == 'CLS_ONLY':
+        model = model.__dict__["_modules"]['classifier']
+    elif pattern == 'ALL':
+        model = model
+        
+    for name, layer in model.named_children():
+        # Binarization
+        if type(layer) == nn.Linear:
+            model.__dict__["_modules"][name] = BinarizedLinear(layer.in_features, layer.out_features)
+        else:
+            layer_types = [type(layer) for layer in layer.modules()]
+
+            if nn.Linear in layer_types:
+                binarize(layer, 'ALL')
+    return
+
+def binarize_origin(model, binarize_all_linear=False):
     """
     Recursively replace linear layers with binary layers
     :param model: Model to be binarized
@@ -89,6 +126,10 @@ def binarize(model, binarize_all_linear=False):
     """
 
     for name, layer in model.named_children():
+        # SKip generator quantization
+        if "generator" in name:
+            continue
+
         # Binarization
         if type(layer) == nn.Linear and binarize_all_linear:
             model.__dict__["_modules"][name] = BinarizedLinear(layer.in_features, layer.out_features)
