@@ -6,6 +6,7 @@ from torch.autograd import Variable
 import math
 from collections import defaultdict
 
+device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 
 keys = {"scale_product_head_0",
         "scale_product_head_0_q",
@@ -30,19 +31,28 @@ class EMA_Activation:
 
     def __call__(self, name, x):
         assert name in self.shadow
-        if self.shadow[name][0] * self.shadow[name][1] == 0:
-            new_xmin = x.min()
-            new_xmax = x.max()
+        if len(x.size()) < 4:
+            if self.shadow[name][0] * self.shadow[name][1] == 0:
+                new_xmin = x.min()
+                new_xmax = x.max()
+            else:
+                new_xmin = (1.0 - self.mu) * x.min() + self.mu * self.shadow[name][0]
+                new_xmax = (1.0 - self.mu) * x.max() + self.mu * self.shadow[name][1]
         else:
-            new_xmin = (1.0 - self.mu) * x.min() + self.mu * self.shadow[name][0]
-            new_xmax = (1.0 - self.mu) * x.max() + self.mu * self.shadow[name][1]
+            num_heads = x.size(1)
+            x_copy = x.clone().permute(0, 2, 3, 1).contiguous().view(num_heads, -1)
+            new_xmin = x_copy.min(dim=1, keepdim=True)[0].unsqueeze(-1)
+            new_xmax = x_copy.max(dim=1, keepdim=True)[0].unsqueeze(-1)
         self.shadow[name] = [new_xmin.clone(), new_xmax.clone()]
         return [new_xmin, new_xmax]
 
 
 ema_activation = EMA_Activation()
 for key in keys:
-    ema_activation.register(key, [torch.tensor(0), torch.tensor(0)])
+    if key.startswith("scale_product_head_0"):
+        ema_activation.register(key, [torch.zeros(8, 1, 1, device=device), torch.zeros(8, 1, 1, device=device)])
+    else:
+        ema_activation.register(key, [torch.tensor(0), torch.tensor(0)])
 
 
 class EMA_Weight:
@@ -81,16 +91,6 @@ class LayerNorm(nn.Module):
 
 def quantization_activations(X, name, k=8):
     if X.requires_grad:
-        # if len(X.size()) > 3:
-        #     num_heads = X.size(1)
-        #     x_copy = X.permute(0, 2, 3, 1).contiguous().view(-1, num_heads)
-        #     xmin = 0.9 * xmin + 0.1 * \
-        #            torch.min(x_copy, dim=0)[0].detach().unsqueeze(-1).unsqueeze(-1).expand(num_heads, 512, X.size(3))
-        #     xmax = 0.9 * xmax + 0.1 * \
-        #            torch.max(x_copy, dim=0)[0].detach().unsqueeze(-1).unsqueeze(-1).expand(num_heads, 512, X.size(3))
-        # else:
-        #     xmin = 0.9 * xmin + 0.1 * torch.min(X).item()
-        #     xmax = 0.9 * xmax + 0.1 * torch.max(X).item()
         ema_activation(name, X)
     xmin, xmax = ema_activation.shadow[name]
     s = (xmax - xmin) / (2 ** k - 1)
@@ -127,10 +127,10 @@ class PositionalWiseFFNQuant(nn.Module):
     def forward(self, x):
         key_input = "ffn{}".format(self.head) + "_input"
         key_output = "ffn{}".format(self.head) + "_output"
-        # x = _quantization_activations(x, key_input)
+        x = _quantization_activations(x, key_input)
 
         x = self.dropout(F.relu(self.w_1(x)))
-        # x = _quantization_activations(x, key_output)
+        x = _quantization_activations(x, key_output)
         return self.w_2(x)
 
 
@@ -140,9 +140,9 @@ def ScaledDotProductQuant(query, key, values, dropout=None, mask=None, head=0):
     key_key = common + "_k"
     value_key = common + "_v"
     attention_key = common
-    # query = _quantization_activations(query, query_key)
-    # key = _quantization_activations(key, key_key)
-    # values = _quantization_activations(values, value_key)
+    query = _quantization_activations(query, query_key)
+    key = _quantization_activations(key, key_key)
+    values = _quantization_activations(values, value_key)
 
     d_k = query.size(-1)
     scores = torch.matmul(query, key.transpose(-2, -1)) / math.sqrt(d_k)
@@ -153,7 +153,7 @@ def ScaledDotProductQuant(query, key, values, dropout=None, mask=None, head=0):
     p_atten = F.softmax(scores, dim=-1)
     if dropout:
         p_atten = dropout(p_atten)
-    # p_atten = _quantization_activations(p_atten, attention_key)
+    p_atten = _quantization_activations(p_atten, attention_key)
     return torch.matmul(p_atten, values), p_atten
 
 
@@ -177,9 +177,9 @@ class MultiheadAttentionQuant(nn.Module):
         key_key = common + "_k"
         value_key = common + "_v"
         attention_key = common
-        # query = _quantization_activations(query, query_key)
-        # key = _quantization_activations(key, key_key)
-        # value = _quantization_activations(value, value_key)
+        query = _quantization_activations(query, query_key)
+        key = _quantization_activations(key, key_key)
+        value = _quantization_activations(value, value_key)
 
         batch_size = query.size(0)
         if mask is not None:
@@ -188,7 +188,7 @@ class MultiheadAttentionQuant(nn.Module):
                              for l, x in zip(self.heads, (query, key, value))]
         x, self.attn = ScaledDotProductQuant(query, key, value, self.dropout, mask)
         x = x.transpose(1, 2).contiguous().view(batch_size, -1, self.h * self.d_k)
-        # x = _quantization_activations(x, attention_key)
+        x = _quantization_activations(x, attention_key)
         x = self.output(x)
         return x
 
@@ -200,8 +200,8 @@ class ClassifierQuant(nn.Module):
         self.classifier = nn.Linear(d_hidden, n_class)
 
     def forward(self, x):
-        # key_name = "classifier"
-        # x = _quantization_activations(x, key_name)
+        key_name = "classifier"
+        x = _quantization_activations(x, key_name)
         x = self.hidden(x)
         return self.classifier(x)
 
@@ -330,4 +330,3 @@ class Model(nn.Module):
         for name, params in self.named_parameters():
             if params.requires_grad and "bias" not in name:
                 self.ema_weight(name, params, k)
-
