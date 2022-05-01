@@ -148,7 +148,7 @@ def ScaledDotProduct(query, key, values, dropout=None, mask=None):
 
 class MultiheadAttention(nn.Module):
     '''
-    Class of multi-head attention, break input features into h heads,
+    Class of multi-head attention, break input features into h heads, 
     do attention, then concatenated together.
     Arguments:
     h       - number of heads
