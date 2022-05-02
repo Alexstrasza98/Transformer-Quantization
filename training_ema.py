@@ -4,6 +4,7 @@ from tqdm import tqdm
 import pandas as pd
 import numpy as np
 from utils.train_utils import AverageMeter, accuracy
+from utils.model_copy import module_copy
 
 device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 
@@ -11,13 +12,17 @@ device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 class Learner():
     def __init__(self, train_config):
         '''
-        train_conig: a dict of {'model': model to use,
+        train_conig: a dict of {'model_original': original full-precision transformer,
+                                'model': model to use,
                                 'loss_fn': loss function to use,
+                                'optim_original': original optimizer setting,
                                 'optim': optimizer to use,
+                                'scheduler_original': original scheduler setting,
                                 'scheduler': lr scheduler to use,
                                 'datasets': dataset to use,
                                 'epochs': how many epochs to train on,
-                                'exp_name': experiment name, to distinguish different models}
+                                'exp_name': experiment name, to distinguish different models,
+                                'epoch_start_quantization': epoch to start quantization}
         '''
         # training settings
         self.config = train_config
@@ -27,6 +32,19 @@ class Learner():
         self.criterion = train_config['loss_fn']
         self.optimizer = train_config['optim']
         self.scheduler = train_config['scheduler']
+        if train_config.get("epoch_start_quantization"):
+            self.starting_epoch = train_config['epoch_start_quantization']
+        else:
+            self.starting_epoch = 0
+
+        if train_config.get("model_original"):
+            self.original_model = train_config['model_original']
+            self.original_model.to(device)
+            self.original_optim = train_config["optim_original"]
+            self.original_scheduler = train_config["scheduler_original"]
+        else:
+            assert self.starting_epoch == 0
+            self.original_model = self.model
 
         self.train_loader, self.test_loader = train_config['datasets']
 
@@ -52,10 +70,18 @@ class Learner():
         for epoch in tqdm(range(epochs)):
             print('current lr {:.5e}'.format(self.optimizer.param_groups[0]['lr']))
 
-            self.model.train()
-            self.train_step(epoch)
+            if self.starting_epoch > epoch:
+                self.original_model.train()
+                self.train_step(epoch)
+                self.original_model.eval()
+            else:
+                if self.original_model is not None:
+                    print("Switching to quantized model")
+                    self.model = module_copy(self.original_model, self.model)
+                self.model.train()
+                self.train_step(epoch)
+                self.model.eval()
 
-            self.model.eval()
             test_acc = self.validate(epoch)
 
             self.test_acc_all.append(test_acc)
@@ -90,14 +116,23 @@ class Learner():
             masks = masks.to(device)
 
             # compute output
-            logits = self.model(tokens, masks.view(masks.shape[0], 1, 1, masks.shape[1]))
-            loss = self.criterion(logits, labels)
-            # compute gradient and do SGD step
-            self.optimizer.zero_grad()
-            loss.backward()
-            torch.nn.utils.clip_grad_norm(self.model.parameters(), 10.)
-            self.optimizer.step()
-            self.model.apply_ema()
+            if self.starting_epoch > epoch:
+                logits = self.original_model(tokens, masks.view(masks.shape[0], 1, 1, masks.shape[1]))
+                loss = self.criterion(logits, labels)
+                # compute gradient and do SGD step
+                self.original_optim.zero_grad()
+                loss.backward()
+                torch.nn.utils.clip_grad_norm_(self.model.parameters(), 10.)
+                self.original_optim.step()
+            else:
+                logits = self.model(tokens, masks.view(masks.shape[0], 1, 1, masks.shape[1]))
+                loss = self.criterion(logits, labels)
+                # compute gradient and do SGD step
+                self.optimizer.zero_grad()
+                loss.backward()
+                torch.nn.utils.clip_grad_norm_(self.model.parameters(), 10.)
+                self.optimizer.step()
+                self.model.apply_ema()
 
             # measure accuracy and record loss
             prec1 = accuracy(logits.data, labels)[0]
@@ -130,7 +165,10 @@ class Learner():
                 masks = masks.to(device)
 
                 # compute output
-                logits = self.model(tokens, masks.view(masks.shape[0], 1, 1, masks.shape[1]))
+                if self.starting_epoch > epoch and self.starting_epoch > 0:
+                    logits = self.original_model(tokens, masks.view(masks.shape[0], 1, 1, masks.shape[1]))
+                else:
+                    logits = self.model(tokens, masks.view(masks.shape[0], 1, 1, masks.shape[1]))
 
                 # measure accuracy and record loss
                 prec1 = accuracy(logits.data, labels)[0]
