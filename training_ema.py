@@ -38,13 +38,14 @@ class Learner():
             self.starting_epoch = 0
 
         if train_config.get("model_original"):
+            print("original model received!")
             self.original_model = train_config['model_original']
             self.original_model.to(device)
             self.original_optim = train_config["optim_original"]
             self.original_scheduler = train_config["scheduler_original"]
         else:
             assert self.starting_epoch == 0
-            self.original_model = self.model
+            self.original_model = None
 
         self.train_loader, self.test_loader = train_config['datasets']
 
