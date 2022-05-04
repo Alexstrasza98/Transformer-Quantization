@@ -3,12 +3,12 @@ import torch.backends.cudnn as cudnn
 from tqdm import tqdm
 import pandas as pd
 import numpy as np
-from utils.train_utils import AverageMeter, accuracy
+from utils.train_utils import AverageMeter, accuracy, change_t
 
 device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 
 class Learner():
-    def __init__(self, train_config):
+    def __init__(self, train_config, ir = False):
         '''
         train_conig: a dict of {'model': model to use,
                                 'loss_fn': loss function to use,
@@ -23,6 +23,7 @@ class Learner():
         
         self.model = train_config['model']
         self.model.to(device)
+        self.ir = ir
         self.criterion = train_config['loss_fn']
         self.optimizer = train_config['optim']
         self.scheduler = train_config['scheduler']
@@ -43,6 +44,7 @@ class Learner():
         self.model_path = f'./res/{self.exp_name}_best.pth'
         self.test_path = f'./res/{self.exp_name}_test.npy'
         
+        
     def train(self):
         cudnn.benchmark = True
         epochs = self.config['epochs']
@@ -50,6 +52,16 @@ class Learner():
         
         for epoch in tqdm(range(epochs)):
             print('current lr {:.5e}'.format(self.optimizer.param_groups[0]['lr']))
+            
+            # if training with ir net, change t at first
+            if self.ir:
+                
+                t_value = 0.1*10**(epoch/epochs*np.log(100))
+                t_value = torch.Tensor([t_value]).to(device)
+                t_value.requires_grad = False
+                print(t_value)
+                
+                change_t(self.model, t_value)
             
             self.model.train()
             self.train_step(epoch)
