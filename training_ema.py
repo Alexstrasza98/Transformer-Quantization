@@ -63,6 +63,8 @@ class Learner():
         self.model_path = f'./res/{self.exp_name}_best.pth'
         self.test_path = f'./res/{self.exp_name}_test.npy'
 
+        self.switch = False
+
     def train(self):
         cudnn.benchmark = True
         epochs = self.config['epochs']
@@ -75,10 +77,12 @@ class Learner():
                 self.original_model.train()
                 self.train_step(epoch)
                 self.original_model.eval()
+                self.switch = True
             else:
-                if self.original_model is not None:
+                if self.original_model is not None and self.switch:
                     print("Switching to quantized model")
                     self.model = module_copy(self.original_model, self.model)
+                    self.switch = False
                 self.model.train()
                 self.train_step(epoch)
                 self.model.eval()
