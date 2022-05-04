@@ -1,3 +1,6 @@
+from quantization.binarize import IRLinear
+import pdb
+
 class AverageMeter(object):
     """
     Computes and stores the average and current value.
@@ -38,3 +41,23 @@ def accuracy(output, target, topk=(1,)):
         res.append(correct_k.mul_(100.0 / batch_size)) 
         
     return res
+
+
+def change_t(model, t_value):
+    """
+    Recursively replace linear layers with binary layers
+    """
+    
+#     pdb.set_trace()
+    
+    for name, layer in model.named_children():
+        # Binarization
+        if type(layer) == IRLinear:
+            model.__dict__["_modules"][name].t = t_value
+            
+        else:
+            layer_types = [type(layer) for layer in layer.modules()]
+
+            if IRLinear in layer_types:
+                change_t(layer, t_value)
+    return
