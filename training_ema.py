@@ -127,7 +127,7 @@ class Learner():
                 # compute gradient and do SGD step
                 self.original_optim.zero_grad()
                 loss.backward()
-                torch.nn.utils.clip_grad_norm_(self.model.parameters(), 10.)
+                torch.nn.utils.clip_grad_norm_(self.model.parameters(), .5)
                 self.original_optim.step()
             else:
                 logits = self.model(tokens, masks.view(masks.shape[0], 1, 1, masks.shape[1]))
