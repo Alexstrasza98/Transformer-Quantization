@@ -1,4 +1,4 @@
-from .transformer_raw import *
+from .transformer import *
 from torch.quantization.qconfig import QConfig
 from torch.quantization.fake_quantize import FusedMovingAvgObsFakeQuantize
 from torch.quantization.observer import MovingAverageMinMaxObserver, MovingAveragePerChannelMinMaxObserver
@@ -70,10 +70,10 @@ def quantization_ffn_training(d_model, d_ff, dropout_ffn, fused_modules, k=(8, 8
 
 
 class sublayerConnectionFFN(nn.Module):
-    def __init__(self, d_model, d_ff, dropout_ffn=0.1, dropout_connection=0.1, quant_ffn=False):
+    def __init__(self, d_model, d_ff, dropout_ffn=0.1, dropout_connection=0.1, quant_ffn=False, bit_num=8):
         super(sublayerConnectionFFN, self).__init__()
         if quant_ffn:
-            self.ffn = quantization_ffn_training(d_model, d_ff, dropout_ffn, fused_modules=[["w_1", "relu1"]]).cuda()
+            self.ffn = quantization_ffn_training(d_model, d_ff, dropout_ffn, fused_modules=[["w_1", "relu1"]], k=(bit_num,bit_num)).cuda()
         else:
             self.ffn = PositionalWiseFFN(d_model, d_ff, dropout_ffn)
         self.layernorm = LayerNorm(d_model)
@@ -163,10 +163,10 @@ class MultiheadAttentionQuantization(nn.Module):
 
 
 class sublayerConnectionAttention(nn.Module):
-    def __init__(self, h, d_model, dropout_head=0.1, dropout_connection=0.1, quant_mha=False):
+    def __init__(self, h, d_model, dropout_head=0.1, dropout_connection=0.1, quant_mha=False, bit_num=8):
         super(sublayerConnectionAttention, self).__init__()
         if quant_mha:
-            self.multiheads = quantization_mha_training(h, d_model, dropout_head)
+            self.multiheads = quantization_mha_training(h, d_model, dropout_head, k=(bit_num,bit_num))
         else:
             self.multiheads = MultiheadAttention(h, d_model, dropout_head)
         self.layernorm = LayerNorm(d_model)
@@ -226,7 +226,7 @@ class ModelQuant(nn.Module):
                  n_class,
                  vocab,
                  n_layers=6,
-                 h=2,
+                 h=8,
                  d_model=512,
                  d_ff=128,
                  d_hidden=1024,
@@ -238,7 +238,9 @@ class ModelQuant(nn.Module):
                  dropout_ffn=0.1,
                  quant_ffn=False,
                  quant_mha=False,
-                 quant_classifier=False):
+                 quant_classifier=False,
+                 bit_num=8):
+        
         super(ModelQuant, self).__init__()
         self.input_embeddings = Embeddings(d_model, vocab, maxlen)
         self.input_encodings = PositionalEncoding(d_model, dropout_encodings, maxlen)
@@ -247,11 +249,11 @@ class ModelQuant(nn.Module):
         self.sublayer_ffn = nn.ModuleList()
         for _ in range(n_layers):
             self.sublayer_attention.append(sublayerConnectionAttention(
-                h, d_model, dropout_attention, dropout_connection_attention, quant_mha))
+                h, d_model, dropout_attention, dropout_connection_attention, quant_mha, bit_num))
             self.sublayer_ffn.append(sublayerConnectionFFN(
-                d_model, d_ff, dropout_ffn, dropout_connection_ffn, quant_ffn))
+                d_model, d_ff, dropout_ffn, dropout_connection_ffn, quant_ffn, bit_num))
         if quant_classifier:
-            self.classifier = quantization_classifier_training(d_model, d_hidden, n_class)
+            self.classifier = quantization_classifier_training(d_model, d_hidden, n_class, k=(bit_num,bit_num))
         else:
             self.classifier = Classifier(d_model, d_hidden, n_class)
         self.n_layers = n_layers

@@ -181,16 +181,16 @@ def binarize(model, pattern, binarize_layer='basic', skip_final=False, qk_only=F
     
 #     pdb.set_trace()
     
-    patterns = ['MHA_ONLY', 'FFN_ONLY', 'CLS_ONLY', 'ALL']
+    patterns = ['MHA', 'FFN', 'CLS', 'ALL']
     
     if pattern not in patterns:
         raise Exception(f'Unimplemented pattern, pattern should be in {patterns}, got {pattern}!')
     
-    if pattern == 'MHA_ONLY':
+    if pattern == 'MHA':
         model = model.__dict__["_modules"]['sublayer_attention']
-    elif pattern == 'FFN_ONLY':
+    elif pattern == 'FFN':
         model = model.__dict__["_modules"]['sublayer_ffn']
-    elif pattern == 'CLS_ONLY':
+    elif pattern == 'CLS':
         model = model.__dict__["_modules"]['classifier']
     elif pattern == 'ALL':
         model = model
