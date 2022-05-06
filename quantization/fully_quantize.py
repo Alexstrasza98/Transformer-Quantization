@@ -75,9 +75,8 @@ class EMA_Weight:
         xmin = x.min().item()
         s = (xmax - xmin) / (2 ** k - 1)
         q = torch.div(x, s, rounding_mode="floor") * s + xmin
-        new_average = torch.round(q)
-        self.shadow[name] = new_average.clone()
-        return new_average
+        self.shadow[name] = q.clone()
+        return q
 
 
 class LayerNorm(nn.Module):
@@ -101,7 +100,6 @@ def quantization_activations(X, name, k=8, fixed_min=False):
     xmin, xmax = ema_activation.shadow[name]
     s = (xmax - xmin) / (2 ** k - 1)
     q = torch.div(torch.clamp(X, min=xmin, max=xmax), s, rounding_mode="trunc") * s + xmin
-    q = torch.round(q)
     return q
 
 
