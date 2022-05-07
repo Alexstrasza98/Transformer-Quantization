@@ -1,3 +1,4 @@
+# check runtime model size
 import torch
 import torch.nn as nn
 import math
@@ -5,10 +6,9 @@ from torch.autograd import Variable
 from torch.nn import functional as F
 from transformers import AutoTokenizer
 from constants import *
+import torch.autograd.profiler as profiler
 
 device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
-activation_memory_cost = 0
-activation_memory_no_embedding = 0
 
 class Transformer(nn.Module):
     '''
@@ -55,20 +55,14 @@ class Transformer(nn.Module):
         self.init_params()
 
     def forward(self, x, mask=None):
-        global activation_memory_cost, activation_memory_no_embedding
         embeddings = self.input_embeddings(x)
         encodings = self.input_encodings(embeddings)
         x = embeddings + encodings
-        activation_memory_cost += x.size().numel()
         for i in range(self.n_layers):
             x = self.sublayer_attention[i](x, mask)
             x = self.sublayer_ffn[i](x)
             # x = self.layernorm(x)
-        activation_memory_cost += x.size().numel()
-        activation_memory_no_embedding += x.size().numel()
         cls_repre = x[:, 0, :]
-        activation_memory_cost += cls_repre.size().numel()
-        activation_memory_no_embedding += cls_repre.size().numel()
         outputs = self.classifier(cls_repre)
         return outputs
 
@@ -99,9 +93,7 @@ class PositionalEncoding(nn.Module):
         self.register_buffer("pe", pe)
 
     def forward(self, x):
-        global activation_memory_cost
         x = x + Variable(self.pe[:, :x.size(1)], requires_grad=False)
-        activation_memory_cost += x.size().numel()
         return self.dropout(x)
 
 class Embeddings(nn.Module):
@@ -120,11 +112,9 @@ class Embeddings(nn.Module):
         self.maxlen = maxlen
 
     def forward(self, x):
-        global activation_memory_cost
         positions = self.pos_embedding(torch.arange(start=0, end=self.maxlen, device=device))[:x.size(1), :]
         tokens = self.token_embedding(x)
         x = positions + tokens
-        activation_memory_cost += x.size().numel()
         return x * math.sqrt(self.d_model)
 
 class PositionalWiseFFN(nn.Module):
@@ -142,11 +132,8 @@ class PositionalWiseFFN(nn.Module):
         self.dropout = nn.Dropout(dropout)
 
     def forward(self, x):
-        global activation_memory_cost, activation_memory_no_embedding
         x = F.relu(self.w_1(x))
         x = self.w_2(self.dropout(x))
-        activation_memory_cost += x.size().numel()
-        activation_memory_no_embedding += x.size().numel()
         return x
 
 
@@ -154,7 +141,6 @@ def ScaledDotProduct(query, key, values, dropout=None, mask=None):
     '''
     Realizing scaled dot product between query, key and values
     '''
-    global activation_memory_cost, activation_memory_no_embedding
     d_k = query.size(-1)
     scores = torch.matmul(query, key.transpose(-2, -1)) / math.sqrt(d_k)
 
@@ -165,8 +151,6 @@ def ScaledDotProduct(query, key, values, dropout=None, mask=None):
     if dropout:
         p_atten = dropout(p_atten)
     sim = torch.matmul(p_atten, values)
-    activation_memory_cost += scores.size().numel() + sim.size().numel()
-    activation_memory_no_embedding += scores.size().numel() + sim.size().numel()
     return sim, p_atten
 
 
@@ -192,7 +176,6 @@ class MultiheadAttention(nn.Module):
         self.dropout = nn.Dropout(p=dropout)
 
     def forward(self, query, key, value, mask=None):
-        global activation_memory_cost, activation_memory_no_embedding
         batch_size = query.size(0)
         if mask is not None:
             mask = mask.unsqueeze(1)
@@ -201,8 +184,6 @@ class MultiheadAttention(nn.Module):
         x, self.attn = ScaledDotProduct(query, key, value, self.dropout, mask)
         x = x.transpose(1, 2).contiguous().view(batch_size, -1, self.h * self.d_k)
         x = self.output(x)
-        activation_memory_cost += x.size().numel()
-        activation_memory_no_embedding += x.size().numel()
         return x
 
 
@@ -259,10 +240,7 @@ class Classifier(nn.Module):
         self.classifier = nn.Linear(d_hidden, n_class)
 
     def forward(self, x):
-        global activation_memory_cost, activation_memory_no_embedding
         x = self.classifier(F.relu(self.hidden(x)))
-        activation_memory_cost += x.size().numel()
-        activation_memory_no_embedding += x.size().numel()
         return x
 
 
@@ -272,8 +250,14 @@ if __name__ == "__main__":
                         tokenizer.vocab_size,
                         BASELINE_MODEL_NUMBER_OF_LAYERS,
                         BASELINE_MODEL_NUMBER_OF_HEADS,
-                        BASELINE_MODEL_DIM)
-    inputs = torch.rand(32, 512).int()  # assume one sentence only?
-    model(inputs)
-    print(activation_memory_cost)  # 218120320 -> if 8bit: 218120320 bytes (208 MB)
-    print(activation_memory_no_embedding)  # 192954496 -> if 8bit: 192954496 bytes (184 MB)
+                        BASELINE_MODEL_DIM).to(device)
+    inputs = torch.rand(1, 512, device=device).int()  # assume one sentence only?
+    masks = torch.rand(1, 512, device=device).int()
+    # warm up
+    model(inputs, masks)
+    with profiler.profile(with_stack=False,
+                          profile_memory=True,
+                          use_cuda=torch.cuda.is_available(),
+                          with_flops=True) as prof:
+        out_prob = model(inputs, masks)
+    print(prof.key_averages(group_by_stack_n=5).table(sort_by='self_cpu_time_total'))
