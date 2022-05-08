@@ -99,6 +99,7 @@ def create_model(vocab_size, quant_type=None, quant_method=None, bit_num=None, q
         print(f"For binarization model, bit num will not work!")
         
         binarize(model, quant_pattern, quant_method, skip_final=True, qk_only=True)
+
     
     return model
 
