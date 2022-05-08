@@ -13,6 +13,7 @@ BASELINE_MODEL_LABEL_SMOOTHING_VALUE = 0.1
 DATA_DIR_PATH = os.path.join(os.path.dirname(__file__), os.pardir, "data")
 os.makedirs(DATA_DIR_PATH, exist_ok=True)
 
+PRETRAINED_WEIGHT_PATH = './data/pretrained_weights.pth'
 
 BOS_TOKEN = "<s>"
 EOS_TOKEN = "</s>"

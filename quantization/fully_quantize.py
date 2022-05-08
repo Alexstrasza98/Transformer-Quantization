@@ -6,6 +6,8 @@ from torch.autograd import Variable
 import math
 from collections import defaultdict
 
+device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+
 
 keys = {"scale_product_head_0",
         "scale_product_head_0_q",
@@ -84,8 +86,8 @@ class LayerNorm(nn.Module):
 
     def __init__(self, features, eps=1e-6):
         super(LayerNorm, self).__init__()
-        self.a_2 = nn.Parameter(torch.ones(features, device="cuda"))
-        self.b_2 = nn.Parameter(torch.zeros(features, device="cuda"))
+        self.a_2 = nn.Parameter(torch.ones(features, device=device))
+        self.b_2 = nn.Parameter(torch.zeros(features, device=device))
         self.eps = eps
 
     def forward(self, x):
@@ -171,8 +173,8 @@ class MultiheadAttentionQuant(nn.Module):
         self.heads = nn.ModuleList()
         self.attn = None
         for _ in range(3):
-            self.heads.append(nn.Linear(d_model, d_model).cuda())
-        self.output = nn.Linear(d_model, d_model).cuda()
+            self.heads.append(nn.Linear(d_model, d_model).to(device))
+        self.output = nn.Linear(d_model, d_model).to(device)
         self.dropout = nn.Dropout(p=dropout)
         self.head = head
 
@@ -215,9 +217,9 @@ class PositionalEncoding(nn.Module):
     def __init__(self, d_model, dropout, max_len):
         super(PositionalEncoding, self).__init__()
         self.dropout = nn.Dropout(p=dropout)
-        pe = torch.zeros((max_len, d_model), device="cuda")
-        position = torch.arange(0, max_len).unsqueeze(1).cuda()
-        scale = torch.exp(torch.arange(0, d_model, 2) * -(math.log(10000.0) / d_model)).cuda()
+        pe = torch.zeros((max_len, d_model), device=device)
+        position = torch.arange(0, max_len).unsqueeze(1).to(device)
+        scale = torch.exp(torch.arange(0, d_model, 2) * -(math.log(10000.0) / d_model)).to(device)
         pe[:, 0::2] = torch.sin(position * scale)
         pe[:, 1::2] = torch.cos(position * scale)
         pe = pe.unsqueeze(0)
@@ -237,7 +239,7 @@ class Embeddings(nn.Module):
         self.maxlen = maxlen
 
     def forward(self, x):
-        positions = self.pos_embedding(torch.arange(start=0, end=self.maxlen, device="cuda"))[:x.size(1), :]
+        positions = self.pos_embedding(torch.arange(start=0, end=self.maxlen, device=device))[:x.size(1), :]
         tokens = self.token_embedding(x)
         return (positions + tokens) * math.sqrt(self.d_model)
 
@@ -260,7 +262,7 @@ class sublayerConnectionAttention(nn.Module):
 class sublayerConnectionFFN(nn.Module):
     def __init__(self, d_model, d_ff, dropout_ffn=0.1, dropout_connection=0.1, head=0):
         super(sublayerConnectionFFN, self).__init__()
-        self.ffn = PositionalWiseFFNQuant(d_model, d_ff, dropout_ffn, head).cuda()
+        self.ffn = PositionalWiseFFNQuant(d_model, d_ff, dropout_ffn, head).to(device)
         self.layernorm = LayerNorm(d_model)
         self.dropout = nn.Dropout(p=dropout_connection)
 
@@ -272,11 +274,12 @@ class sublayerConnectionFFN(nn.Module):
 
 
 class Model(nn.Module):
+    # k works for quantization bit number
     def __init__(self,
                  n_class,
                  vocab,
                  n_layers=6,
-                 h=2,
+                 h=8,
                  d_model=512,
                  d_ff=1024,
                  d_hidden=1024,
@@ -285,7 +288,8 @@ class Model(nn.Module):
                  dropout_connection_attention=0.1,
                  dropout_connection_ffn=0.1,
                  dropout_attention=0.1,
-                 dropout_ffn=0.1):
+                 dropout_ffn=0.1,
+                 k=8): 
         super(Model, self).__init__()
         self.input_embeddings = Embeddings(d_model, vocab, maxlen)
         self.input_encodings = PositionalEncoding(d_model, dropout_encodings, maxlen)
@@ -303,6 +307,7 @@ class Model(nn.Module):
 
         self.init_params()
         self.ema_init()
+        self.k = k 
 
     def forward(self, x, mask=None):
         embeddings = self.input_embeddings(x)

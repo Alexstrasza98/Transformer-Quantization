@@ -166,7 +166,7 @@ class IRLinear(nn.Module):
         return self.__class__.__name__ + " (" + str(self.in_features) + " -> " + str(self.out_features) + ")"
     
 
-def binarize(model, pattern, binarize_layer='basic', skip_final=False, qk_only=False):
+def binarize(model, pattern, binarize_layer='basic', skip_final=False, qk_only=False, qv_only=False, kv_only=False):
     """
     Recursively replace linear layers with binary layers
     ---------
@@ -200,8 +200,13 @@ def binarize(model, pattern, binarize_layer='basic', skip_final=False, qk_only=F
         if type(layer) == nn.Linear:
             if (skip_final == True) & (layer.out_features == 4):
                 continue
+            if (kv_only == True) & (name == '0'):
+                continue
+            if (qv_only == True) & (name == '1'):
+                continue
             if (qk_only == True) & (name == '2'):
                 continue
+                
             if binarize_layer == 'basic':
                 b = BinarizedLinear(layer.in_features, layer.out_features)
             elif binarize_layer == 'ir':
@@ -211,5 +216,5 @@ def binarize(model, pattern, binarize_layer='basic', skip_final=False, qk_only=F
             layer_types = [type(layer) for layer in layer.modules()]
 
             if nn.Linear in layer_types:
-                binarize(layer, 'ALL', binarize_layer, skip_final, qk_only)
+                binarize(layer, 'ALL', binarize_layer, skip_final, qk_only, qv_only, kv_only)
     return
