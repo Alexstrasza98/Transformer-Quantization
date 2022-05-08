@@ -139,8 +139,8 @@ def quantizer(model, quantization_bits=7, quantize_all_linear=False):
 
     for name, layer in model.named_children():
         # SKip classifier quantization
-        if "classifier" in name:
-            continue
+        # if "classifier" in name:
+        #     continue
 
         if "sublayer_" in name:
             for sub_name, sub_layer in getattr(model, name).named_children():
