@@ -36,7 +36,7 @@ class AG_NEWS_DATASET():
         return batch_sentence, batch_label, attn_mask
     
     def load_data(self):
-        
+
         train_dl = DataLoader(self.train_ds, 
                               batch_size=self.batch_size, 
                               shuffle=True,

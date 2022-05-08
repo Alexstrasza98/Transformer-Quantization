@@ -1,5 +1,5 @@
 from quantization.binarize import IRLinear
-import pdb
+import torch.nn as nn
 
 class AverageMeter(object):
     """
@@ -48,10 +48,8 @@ def change_t(model, t_value):
     Recursively replace linear layers with binary layers
     """
     
-#     pdb.set_trace()
-    
     for name, layer in model.named_children():
-        # Binarization
+        # change layer's t value
         if type(layer) == IRLinear:
             model.__dict__["_modules"][name].t = t_value
             
@@ -61,3 +59,14 @@ def change_t(model, t_value):
             if IRLinear in layer_types:
                 change_t(layer, t_value)
     return
+
+def module_copy(source_module, target_module):
+    """
+    Copy model weights from source_module to target_module
+    """
+    assert isinstance(source_module, nn.Module) and isinstance(target_module, nn.Module)
+    try:
+        target_module.load_state_dict(source_module.state_dict())
+    except:
+        raise Exception("Two models do not match!")
+    return target_module
