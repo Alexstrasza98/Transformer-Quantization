@@ -2,6 +2,12 @@ import torch
 from torchtext.datasets import AG_NEWS
 from torch.utils.data import DataLoader
 
+i = -1
+def transformation(data):
+    global i
+    i += 1
+    return (i, data)
+
 def pad_sequence(sequences, batch_first=False, max_len=None, padding_value=0):
     max_size = sequences[0].size()
 
@@ -11,7 +17,8 @@ class AG_NEWS_DATASET():
         self.specials = ['[UNK]', '[PAD]', '[CLS]']
         self.batch_size = batch_size
         self.max_sen_len = 100
-        self.train_ds = AG_NEWS(root='./data', split='train')
+        train_ds = AG_NEWS(root='./data', split='train')
+        self.train_ds = train_ds.to_map_datapipe(key_value_fn=transformation)
         self.test_ds = AG_NEWS(root='./data', split='test')
         
     def generate_batch(self, data_batch):
@@ -29,7 +36,7 @@ class AG_NEWS_DATASET():
         return batch_sentence, batch_label, attn_mask
     
     def load_data(self):
-        
+
         train_dl = DataLoader(self.train_ds, 
                               batch_size=self.batch_size, 
                               shuffle=True,
