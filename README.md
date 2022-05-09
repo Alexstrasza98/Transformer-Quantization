@@ -59,6 +59,14 @@ To train baseline transformer model on AG_NEWS dataset without any quantization/
 python3 train_script.py
 ```
 
+For any model, you can specify argument `--exp_name` to name your own experiment, like 
+
+```
+python3 train_script.py --exp_name baseline
+```
+
+The results will be saved in as `./res/baseline_best.pth` for best model, `./res/baseline_log.csv` for training log and `./res/baseline_test.npy` for test set performance. Training log and test set performance can be plotted in plot.ipynb to visualize.
+
 ## Train quantization model
 
 To train quantization model, you should specify argument `--quant_type` to 'quantization', and you can choose quantize method from ['basic', 'fully'] by specifying argument `--quant_method`, also you must specify bit number for paramter and/or activation by setting argument `--bit_num` as one of [8,4,2].
@@ -93,6 +101,7 @@ python3 train_script.py --quant_type binarization --quant_method ir --quant_patt
 ```
 python3 train_script.py --quant_type binarization --quant_method ir --quant_pattern ALL_QK --latent
 ```
+If you want to use pre-trained trick, pre-trained model weights should be download from link(https://drive.google.com/file/d/1iq-t9Y5KQ19HOnOVo0S-HnrBkklyj2u8/view?usp=sharing) to **./data/**. 
 
 # Experiment and Results
 
