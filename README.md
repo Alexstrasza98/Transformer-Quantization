@@ -5,8 +5,14 @@ It is the final project repository for 2022 Spring COMS6998-E009 Practical Deep 
 
 Current quantization methods are mostly designed on CNN and tested on Image Classiﬁcation Task. However, there is huge difference between CNN and Transformer architecture. CNN has convolution as its base operation, while transformer relies mostly on Multi-head Attention module. They have totally different feature. So how to explore efficient and effective quantization method for transformer is main focus of our project.
 
-**Goal**: We
+**Goal**: We want to
 
+1. Implement and modify diverse quantization and binarization methods from CNN to see if it still works well on transformer
+2. Explore the internal feature of transformer structure and design special quantization pattern to improve quantization performance on transformer
+3. Reach a trade-off between model size and bearable classiﬁcation error as an optimal compression strategy
+
+**Approach**: We construct a transformer model with two encoder layers for text classification task as our baseline. We use AG_NEWS as target dataset. Basic quantization and binarization methods are implemented and tested on transformer, then two optimized algorithm from fully-quantization and IR Net are implemented to improve quantization performance. We also explored sensitivity of different parts of transformer and designed a speical pattern for transformer quantization that only quantizing Query and Key without Value, based on the observation that we only cares similarity between query and key instead of absolute values. At last, we proposed a new method called latent quantization, which train full precision model for a few epochs at beginning then switch to quantized model. This method is proved to be effective.
+ 
 
 # Code Structure
 
@@ -30,5 +36,7 @@ Inside this directory, `constants.py` - some pre-defined constants for model def
 # Example commands to run
 
 # Experiment and Results
+
+## Experiment 1
 
 ```
