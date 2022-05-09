@@ -45,6 +45,55 @@ Inside this directory, `constants.py` - some pre-defined constants for model def
 
 # Example commands to run
 
+Training codes for different baseline/quantized/binarized model are provided in this repository. To run it, you should first install all requirements by
+
+```
+pip3 install -r requirements.txt
+```
+
+## Train baseline model
+
+To train baseline transformer model on AG_NEWS dataset without any quantization/binarization, you can use command without any arugments, which is
+
+```
+python3 train_script.py
+```
+
+## Train quantization model
+
+To train quantization model, you should specify argument `--quant_type` to 'quantization', and you can choose quantize method from ['basic', 'fully'] by specifying argument `--quant_method`, also you must specify bit number for paramter and/or activation by setting argument `--bit_num` as one of [8,4,2].
+
+For example, if you want to train a model using fully quantization and 8 bit, you can use command like 
+
+```
+python3 train_script.py --quant_type quantization --quant_method fully --bit_num 8
+```
+
+## Train binarization model
+
+Training of binarization model is similar, you should specify argument `--quant_type` as 'binarization' and choose quantize method from ['basic', 'ir'] and set as argment `--quant_method`. However, for binarization method, `--bit_num` will not work since every parameter will be set as 1bit. Instead, you can binarize part of the model by specifying argument `--quant_pattern` as one of ['MHA', 'FFN', 'CLS', 'ALL', 'ALL_QK'], which means binarizing multi-head attention layer, feedforward layer, classifier, all model, all model with only query/key without value respectively.
+
+For example, if you want to train a model using IR-Net binarization and binarize the whole model with QK, you can use command like
+
+
+```
+python3 train_script.py --quant_type binarization --quant_method ir --quant_pattern ALL_QK
+```
+
+## Pre-trained weights and latent quantization
+
+Loading pre-trained weights and latent quantization are two tricks that designed to improve quantization performance. They are compatible with any quantized model with addition argument `--pre_trained` and `--latent`
+
+For example, if you want to train a similar binarization model but uses pre-trained weight or latent quantization trick, you can use command like 
+
+```
+python3 train_script.py --quant_type binarization --quant_method ir --quant_pattern ALL_QK --pre_trained
+```
+
+```
+python3 train_script.py --quant_type binarization --quant_method ir --quant_pattern ALL_QK --latent
+```
+
 # Experiment and Results
 
 ## Experiment 1: Effectiveness of different quantization methods
@@ -106,5 +155,3 @@ In our third experiment, we first train models with pre-trained full precision w
 ![avatar](./figures/Table8.png)
 
 We can see that for both quantization and binarization, pre-trained weights not only accelerate convergence, but also lead to better generalization performance, which verifies the argument in the original paper. And we surprisingly found that latent quantization can achieve even better results. We guess the reason behind is that the full-precision model has different optimal solution space with quantized model. It means trained weights can provide prior knowledge in quantized model, but converged weights will harm the performance a little bit because it lies in different solution space. Note that an important advantage of our method is that we do not need pretrained weights anymore, which may accelerate whole training process.
-
-```
