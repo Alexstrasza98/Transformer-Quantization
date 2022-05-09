@@ -2,6 +2,7 @@ import torch
 from torchtext.datasets import AG_NEWS
 from torch.utils.data import DataLoader
 
+# used to create key-data pair for map-style dataset
 i = -1
 def transformation(data):
     global i

@@ -93,12 +93,33 @@ if __name__ == '__main__':
     # set parser
     parser = argparse.ArgumentParser()
     
-    parser.add_argument("--quant_type", type=str, help="whether to conduct quantization or binarization", default=None)
-    parser.add_argument("--quant_method", type=str, help="which specific quantization method to use", default=None)
-    parser.add_argument("--bit_num", type=int, help="bit number for each parameter", default=None)
-    parser.add_argument("--quant_pattern", type=str, help="which part of transformer to quant", default=None)
-    parser.add_argument("--pre_trained", type=bool, help="whether to load pre-trained weight", default=False)
-    parser.add_argument("--latent", type=bool, help="whether to do latent training", default=False)
+    parser.add_argument("--quant_type", 
+                        type=str, 
+                        help="whether to conduct quantization or binarization", 
+                        choices=['quantization', 'binarization'],
+                        default=None)
+    parser.add_argument("--quant_method", 
+                        type=str, help="which specific quantization method to use", 
+                        choices=['basic', 'fully', 'ir'],
+                        default=None)
+    parser.add_argument("--bit_num", 
+                        type=int, 
+                        help="bit number for each parameter", 
+                        choices=[8,4,2],
+                        default=None)
+    parser.add_argument("--quant_pattern", 
+                        type=str, 
+                        help="which part of transformer to quant", 
+                        choices=['MHA', 'FFN', 'CLS', 'ALL', 'ALL_QK'],
+                        default=None)
+    parser.add_argument("--pre_trained", 
+                        help="whether to load pre-trained weight", 
+                        action='store_true',
+                        default=False)
+    parser.add_argument("--latent", 
+                        help="whether to do latent training", 
+                        action='store_true',
+                        default=False)
     parser.add_argument("--exp_name", type=str, help="experiment name, to specify save path", default='tmp')
     
     args = parser.parse_args()
