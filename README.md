@@ -1,27 +1,34 @@
-# Transformer-Quantization
-The final project repository for 2022 Spring COMS6998-009 Deep Learning System Performance in Columbia University.
+# Project Description: Transformer-Quantization
+It is the final project repository for 2022 Spring COMS6998-E009 Practical Deep Learning System Performance in Columbia University. This repository is about conducting quantization and binarization on transformer models.
 
-# Simple Code Structure
-`figures`: figures included in report
+**Motivation**: Transformer is becoming SOTA base model for many NLP&CV tasks because of its ability to accomodate large-scale data. However, the main disadvantage of transformer is its large model size and even larger runtime memory usage. Therefore, it is important to explore diverse ways to compress model to lower hardware cost. Among diverse model compression techniques, quantization wins out because of its simplicity of implementation, preservation of original model structure and robustness to noise. 
 
-`quantization`: core codes including transformer definition, quantization, binarization
+Current quantization methods are mostly designed on CNN and tested on Image Classiﬁcation Task. However, there is huge difference between CNN and Transformer architecture. CNN has convolution as its base operation, while transformer relies mostly on Multi-head Attention module. They have totally different feature. So how to explore efficient and effective quantization method for transformer is main focus of our project.
+
+**Goal**: We
+
+
+# Code Structure
+
+**/quantization**: core codes including transformer definition, quantization, binarization. 
+
+Inside this directory, `transformer.py` - definition of baseline transformer model; `quantize.py` - codes for basic quantization (weight only); `fully_quantize.py` - codes for fully quantization (quantize both weight and activation);  `binarize.py` - codes for basic and IR-Net binarization; `pytorch_api.py` - pytorch API for simple quantization, used for quickly go through essential ideas of quantization, not used in final experiment
  
-`res`: models, training logs, test results of different experiments
+**/utils**: util functions used in model training and other experiments
 
-`utils`: utils functions
+Inside this directory, `constants.py` - some pre-defined constants for model definition and training; `data_utils.py` - functions to construct dataset; `train_utils.py` - help functions used in training; `training.py` - core training codes; `check_activation.py` - functions used to compute runtime memory size; `pretrained.py` - functions to load pre-trained model weights; `utils.py` - other help functions
 
-`main.ipynb`: main training codes (change to .py with argparser later)
 
-`plot.ipynb`: plotting codes (change to .py later)
+**/res**: save models, training logs, test results of different experiments
 
-# Project Schedule
-Accomplished:
-1. Define baseline model structure and training configurations
-2. Test binarization on different parts of transformer to see sensitivity of each part
+**/figures**: save figures for expeirments
 
-Expected:
-1. Try to only quant Q,K part of MHA, see if any improvements
+`train_script.py`: main function to train model w or w/o quantization
 
-```python
+`plot.ipynb`: used to plot figures
+
+# Example commands to run
+
+# Experiment and Results
 
 ```
